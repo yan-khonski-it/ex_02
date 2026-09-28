@@ -66,9 +66,11 @@ func startProcessing() error {
 	// NewTaskQueueConn returns both the connection and an error.
 	taskQueue, err := lib.NewTaskQueueConn()
 	if err != nil {
-		log.Fatalf("connect to task queue: %v", err)
+		return fmt.Errorf("connect to task queue: %w", err)
 	}
 	defer taskQueue.Shutdown()
+
+	var processed uint64
 
 	// Listen returns a channel. The loop ends when the library closes it.
 	for queuedTask := range taskQueue.Listen() {
@@ -77,12 +79,12 @@ func startProcessing() error {
 			continue
 		}
 
-		fmt.Println("task processed")
+		processed++
 	}
 
 	fmt.Printf(
-		"received: %d, dropped: %d\n",
-		taskQueue.TasksReceived(),
+		"processed: %d, dropped: %d\n",
+		processed,
 		taskQueue.TasksDropped(),
 	)
 
