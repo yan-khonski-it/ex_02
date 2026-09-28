@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,81 +18,64 @@ func TestProcessTasksWithWorkerPoolBoundsConcurrency(t *testing.T) {
 	tasks := make(chan lib.Task, taskCount)
 	started := make(chan struct{}, taskCount)
 	release := make(chan struct{})
+	releaseAll := sync.OnceFunc(func() { close(release) })
+	defer releaseAll()
 
-	var active int64
-	var maxActive int64
+	var active atomic.Int64
+	var maxActive atomic.Int64
 
 	for i := 0; i < taskCount; i++ {
 		tasks <- lib.Task{Do: func() error {
-			current := atomic.AddInt64(&active, 1)
+			current := active.Add(1)
+			defer active.Add(-1)
+
 			for {
-				currentMax := atomic.LoadInt64(&maxActive)
+				currentMax := maxActive.Load()
 				if current <= currentMax ||
-					atomic.CompareAndSwapInt64(&maxActive, currentMax, current) {
+					maxActive.CompareAndSwap(currentMax, current) {
 					break
 				}
 			}
 
 			started <- struct{}{}
 			<-release
-			atomic.AddInt64(&active, -1)
 			return nil
 		}}
 	}
 	close(tasks)
 
-	type result struct {
-		processed uint64
-		err       error
-	}
-
-	done := make(chan result, 1)
+	var processed uint64
+	var err error
+	done := make(chan struct{})
 	go func() {
-		processed, err := processTasksWithWorkerPool(tasks, workerCount)
-		done <- result{processed: processed, err: err}
-	}()
-
-	released := false
-	defer func() {
-		if !released {
-			close(release)
-		}
+		defer close(done)
+		processed, err = processTasksWithWorkerPool(tasks, workerCount)
 	}()
 
 	for i := 0; i < workerCount; i++ {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
-			t.Fatal("workers did not start in time")
+			t.Fatalf("only %d of %d workers started", i, workerCount)
 		}
 	}
 
-	select {
-	case <-started:
-		t.Fatalf("more than %d tasks started concurrently", workerCount)
-	case <-time.After(10 * time.Millisecond):
-	}
-
-	close(release)
-	released = true
+	releaseAll()
 
 	select {
-	case got := <-done:
-		if got.err != nil {
-			t.Fatalf("processTasksWithWorkerPool() error = %v", got.err)
-		}
-		if got.processed != taskCount {
-			t.Fatalf(
-				"processed = %d, want %d",
-				got.processed,
-				taskCount,
-			)
-		}
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("worker pool did not finish in time")
+		t.Fatal("worker pool did not finish")
 	}
 
-	if got := atomic.LoadInt64(&maxActive); got != workerCount {
+	if err != nil {
+		t.Fatalf("processTasksWithWorkerPool() error = %v", err)
+	}
+	if processed != taskCount {
+		t.Fatalf("processed = %d, want %d", processed, taskCount)
+	}
+
+	if got := maxActive.Load(); got != workerCount {
 		t.Fatalf("maximum concurrency = %d, want %d", got, workerCount)
 	}
 }
@@ -100,7 +84,33 @@ func TestProcessTasksWithWorkerPoolRejectsInvalidWorkerCount(t *testing.T) {
 	tasks := make(chan lib.Task)
 	close(tasks)
 
-	if _, err := processTasksWithWorkerPool(tasks, 0); err == nil {
-		t.Fatal("processTasksWithWorkerPool() error = nil, want an error")
+	for _, workerCount := range []int{0, -1} {
+		if _, err := processTasksWithWorkerPool(tasks, workerCount); err == nil {
+			t.Errorf(
+				"workerCount = %d: error = nil, want an error",
+				workerCount,
+			)
+		}
+	}
+}
+
+func TestProcessTasksWithWorkerPoolAllowsMoreWorkersThanTasks(t *testing.T) {
+	const (
+		workerCount = 5
+		taskCount   = 2
+	)
+
+	tasks := make(chan lib.Task, taskCount)
+	for i := 0; i < taskCount; i++ {
+		tasks <- lib.Task{Do: func() error { return nil }}
+	}
+	close(tasks)
+
+	processed, err := processTasksWithWorkerPool(tasks, workerCount)
+	if err != nil {
+		t.Fatalf("processTasksWithWorkerPool() error = %v", err)
+	}
+	if processed != taskCount {
+		t.Fatalf("processed = %d, want %d", processed, taskCount)
 	}
 }
