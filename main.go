@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"time"
 )
@@ -51,8 +53,11 @@ import (
 // - shutdown the service properly
 
 func main() {
+	part := flag.Int("part", 1, "exercise part to run")
+	flag.Parse()
+
 	start := time.Now()
-	err := startProcessing()
+	err := startProcessing(*part)
 	log.Printf("Total duration: %s", time.Since(start))
 	if err != nil {
 		log.Fatalln(err)
@@ -60,6 +65,13 @@ func main() {
 }
 
 // startProcessing runs the currently selected processing implementation.
-func startProcessing() error {
-	return runPart1()
+func startProcessing(part int) error {
+	switch part {
+	case 1:
+		return runPart1()
+	case 2:
+		return runPart2()
+	default:
+		return fmt.Errorf("unsupported part: %d", part)
+	}
 }

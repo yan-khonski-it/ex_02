@@ -9,6 +9,8 @@ import (
 
 // runPart1 processes queued tasks and reports processed and dropped totals.
 func runPart1() error {
+	fmt.Println("Running part 1: sequential processing of tasks.")
+
 	taskQueue, err := lib.NewTaskQueueConn()
 	if err != nil {
 		return fmt.Errorf("connect to task queue: %w", err)
