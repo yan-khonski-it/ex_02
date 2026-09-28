@@ -1,5 +1,17 @@
 # ex_02
 
+Run the application with:
+
+```shell
+go run .
+```
+
+Run the tests with:
+
+```shell
+go test ./...
+```
+
 ## Part 1 — Single-threaded task processing
 
 The first implementation processes tasks sequentially:
@@ -15,7 +27,13 @@ The task-processing loop is extracted into `processTasks`, which accepts a recei
 
 The queue connection is shut down with a deferred `Shutdown()` call. Processing ends after the library closes the task channel and all buffered tasks have been consumed.
 
-Run the application with:
-```shell
-go run .
-```
+### Expected behavior
+
+A typical run processes approximately 117 tasks and drops approximately
+883, taking about 44 seconds. Exact counts may vary slightly depending on
+scheduling, but the processed and dropped counts total 1,000.
+
+The queue receives one task every 25 ms (40 per second), while each task
+takes 375 ms to execute. The single-threaded consumer can therefore process
+only about 2.67 tasks per second. Because the queue holds only 50 waiting
+tasks, its buffer fills quickly and subsequent tasks are dropped.
