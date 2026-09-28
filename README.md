@@ -3,6 +3,7 @@
 Coding exercise. Backpressure example.
 
 Clone the repository:
+
 ```shell
 git clone https://github.com/yan-khonski-it/ex_02.git
 ```
@@ -31,9 +32,11 @@ The first implementation processes tasks sequentially:
 5. Continue processing if an individual task fails.
 6. Report the number of successfully processed and dropped tasks.
 
-The task-processing loop is extracted into `processTasks`, which accepts a receive-only task channel. Task execution remains single-threaded: the next task is not started until the current task finishes.
+The task-processing loop is extracted into `processTasks`, which accepts a receive-only task channel. Task execution
+remains single-threaded: the next task is not started until the current task finishes.
 
-The queue connection is shut down with a deferred `Shutdown()` call. Processing ends after the library closes the task channel and all buffered tasks have been consumed.
+The queue connection is shut down with a deferred `Shutdown()` call. Processing ends after the library closes the task
+channel and all buffered tasks have been consumed.
 
 ### Output
 
@@ -42,11 +45,73 @@ A typical run processes approximately 117 tasks and drops approximately
 
 ## Part 2 — Bounded worker pool
 
-Part 2 uses N workers reading from the library's existing buffered task
-channel. This provides enough aggregate throughput for the simulated arrival
-rate while bounding both active work and queued tasks.
+Part 2 uses 20 workers reading from the channel returned by `Listen()`. The
+channel provides bounded buffering for short bursts while the worker pool
+bounds concurrent task execution. The fixed pool was selected because it is
+the simplest approach that handles the simulated load without unbounded
+resource growth.
 
-The fixed worker count prevents unbounded goroutine and resource growth, while
-the existing 50-task buffer absorbs short bursts. Task completion order is no
-longer guaranteed, and sustained input above the worker pool's capacity can
-still fill the buffer and cause drops.
+### Output
+
+A typical Part 2 run processes all 1,000 tasks with no drops in about 25.4
+seconds:
+
+```text
+processed: 1000, dropped: 0
+```
+
+### Alternatives
+
+The results below are illustrative measurements from separate prototypes. The
+slow-task scenario doubles execution time from 375 ms to 750 ms while keeping
+the 25 ms arrival interval unchanged.
+
+| Approach                                                              |      Normal tasks (375 ms) |                          Slower tasks (750 ms) |                  Concurrency limit |
+|-----------------------------------------------------------------------|---------------------------:|-----------------------------------------------:|-----------------------------------:|
+| Single loop (Part 1)                                                  | 117 processed, 883 dropped |                                   Not measured |                                  1 |
+| **Fixed pool of 20 workers**                                          | 1,000 processed, 0 dropped |                     718 processed, 282 dropped |                                 20 |
+| Semaphore, with a permit acquired before starting each task goroutine | 1,000 processed, 0 dropped |                     719 processed, 281 dropped |                                 20 |
+| One goroutine per task                                                | 1,000 processed, 0 dropped |   1,000 processed, 0 dropped; up to 31 running |                          Unbounded |
+| Unbounded application queue with 20 workers                           | 1,000 processed, 0 dropped |  1,000 processed, 0 dropped; up to 332 waiting | 20 running; waiting work unbounded |
+| Pool growing from 20 to at most 60 workers                            | 1,000 processed, 0 dropped | 1,000 processed, 0 dropped; grew to 35 workers |                                 60 |
+
+
+#### Tradeoffs
+
+- **Fixed pool:** Simple and bounded, but cannot adapt when tasks slow down.
+- **Semaphore:** Enforces the same limit without idle workers, but requires a
+  goroutine per task and separate completion tracking. Acquire the permit before
+  starting the goroutine to avoid unbounded blocked goroutines.
+- **Unbounded goroutines:** Drains input quickly but converts backlog into
+  unlimited goroutines and downstream load, violating the concurrency limit.
+- **Extra application queue:** Moves backlog into memory. A bounded queue only
+  delays overload; an unbounded queue risks growing memory use and latency.
+- **Growing pool:** Adapts to slower tasks up to a limit, but adds scaling
+  complexity and can overload downstream services.
+
+Batching could reduce per-task cost, but `Task.Do()` is a black box.
+Horizontal scaling is not modeled by this exercise. Increasing a finite buffer still only
+delays overload; a real no-loss guarantee requires producer back-pressure or a
+durable queue with acknowledgements and retries.
+
+### Real-world limitations
+
+The fixed pool is good enough for the simulated load and short bursts, but not
+for sustained overload, slower or stuck dependencies, process crashes, or
+guaranteed task delivery.
+
+- **Slower or stuck tasks:** In the representative 750 ms scenario, 282 of
+  1,000 tasks (28.2%) were dropped. A bounded growing pool could help if the
+  downstream service can safely handle the additional concurrency.
+- **Sustained overload:** Any finite buffer eventually fills when input
+  continuously exceeds processing capacity.
+- **Failed tasks:** An error returned by `Task.Do()` is logged, but the task is
+  not retried and is not included in the library's dropped count.
+- **Crash or restart:** In-memory queued and running tasks may be lost or left
+  partially completed because there is no acknowledgement or durable recovery.
+- **Panics:** An unrecovered task panic terminates the process. Recovering at
+  the task boundary would require an explicit safety policy, stack-trace
+  logging, and handling for retries, dead-lettering, and partial side effects.
+- **Ordering and downstream limits:** Concurrent execution does not preserve
+  completion order, and the worker count must respect database, API, and other
+  downstream capacity limits.

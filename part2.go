@@ -6,11 +6,8 @@ import (
 	"github.com/opencareer/interview-excercises/ex_02/lib"
 )
 
-// workersCount is the number of concurrent workers to use for processing tasks in part 2.
-// You can experiment with different values to see how it affects throughput and resource usage.
-// At 14 or less, the buffer will never be empty, and 1 or more tasks will be dropped.
-// At 15 (more likely at 16) or more, the buffer will eventually be emptied.
-const workersCount = 15
+// workersCount limits concurrency; 20 workers can keep up with the simulated task rate.
+const workersCount = 20
 
 // runPart2 processes queued tasks with a bounded worker pool.
 func runPart2() error {

@@ -106,11 +106,26 @@ func TestProcessTasksWithWorkerPoolAllowsMoreWorkersThanTasks(t *testing.T) {
 	}
 	close(tasks)
 
-	processed, err := processTasksWithWorkerPool(tasks, workerCount)
-	if err != nil {
-		t.Fatalf("processTasksWithWorkerPool() error = %v", err)
+	type result struct {
+		processed uint64
+		err       error
 	}
-	if processed != taskCount {
-		t.Fatalf("processed = %d, want %d", processed, taskCount)
+
+	done := make(chan result, 1)
+	go func() {
+		processed, err := processTasksWithWorkerPool(tasks, workerCount)
+		done <- result{processed: processed, err: err}
+	}()
+
+	select {
+	case got := <-done:
+		if got.err != nil {
+			t.Fatalf("processTasksWithWorkerPool() error = %v", got.err)
+		}
+		if got.processed != taskCount {
+			t.Fatalf("processed = %d, want %d", got.processed, taskCount)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("worker pool did not finish")
 	}
 }
