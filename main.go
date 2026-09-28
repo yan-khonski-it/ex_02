@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
+
+	"github.com/opencareer/interview-excercises/ex_02/lib"
 )
 
 // ================================= EXERCISE 2 =================================
@@ -60,5 +63,28 @@ func main() {
 }
 
 func startProcessing() error {
-	panic("TODO")
+	// NewTaskQueueConn returns both the connection and an error.
+	taskQueue, err := lib.NewTaskQueueConn()
+	if err != nil {
+		log.Fatalf("connect to task queue: %v", err)
+	}
+	defer taskQueue.Shutdown()
+
+	// Listen returns a channel. The loop ends when the library closes it.
+	for queuedTask := range taskQueue.Listen() {
+		if err := queuedTask.Do(); err != nil {
+			log.Printf("execute task: %v", err)
+			continue
+		}
+
+		fmt.Println("task processed")
+	}
+
+	fmt.Printf(
+		"received: %d, dropped: %d\n",
+		taskQueue.TasksReceived(),
+		taskQueue.TasksDropped(),
+	)
+
+	return nil
 }
