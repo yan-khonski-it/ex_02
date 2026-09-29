@@ -19,6 +19,7 @@ Run the application with:
 ```shell
 go run . -part=1
 go run . -part=2
+go run . -part=3
 ```
 
 ## Part 1 — Single-threaded task processing
@@ -121,3 +122,34 @@ guaranteed task delivery.
 - **Ordering and downstream limits:** Concurrent execution does not preserve
   completion order, and the worker count must respect database, API, and other
   downstream capacity limits.
+
+## Part 3 — Graceful cancellation
+
+Part 3 reuses the bounded worker pool and listens for the cancellation signal
+provided by `listenCancellation()`. The queue listener is started before
+cancellation can trigger shutdown, and `Shutdown()` is guarded so the
+connection is closed exactly once on cancellation, natural completion, or an
+error.
+
+On cancellation, the service stops fetching new tasks and waits for the worker
+pool to finish. Workers intentionally drain tasks already delivered by the
+queue because the library provides no acknowledgement or requeue operation.
+This avoids abandoning accepted work, at the cost of potentially increasing
+shutdown time.
+
+### Output
+
+With the provided six-second cancellation signal, a typical run reports:
+
+```text
+status: cancelled, processed: 240, dropped: 0
+```
+
+The cancelled status is significant: `dropped: 0` only means no fetched task
+was rejected before shutdown. It does not mean that all tasks for the day were
+fetched.
+
+Part 3 can stop fetching and wait for running tasks, but it cannot interrupt a
+stuck `Task.Do()` call because tasks do not accept a cancellation context.
+Production task handlers would need cancellation or timeout support to place a
+bound on graceful-shutdown duration.

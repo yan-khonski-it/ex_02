@@ -71,6 +71,8 @@ func startProcessing(part int) error {
 		return runPart1()
 	case 2:
 		return runPart2()
+	case 3:
+		return runPart3()
 	default:
 		return fmt.Errorf("unsupported part: %d", part)
 	}
