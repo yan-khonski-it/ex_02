@@ -20,8 +20,7 @@ type processingResult struct {
 	cancelled bool
 }
 
-// workerPoolResult is the result of processing tasks with a bounded worker pool.
-// Did the worker pool finish, how many tasks succeeded, and did processing return an error?
+// workerPoolResult contains the completed worker pool's result.
 type workerPoolResult struct {
 	processed uint64
 	err       error
@@ -94,11 +93,6 @@ func processPart3(
 	select {
 	case workerResult = <-processingDone:
 		processingFinished = true
-		select {
-		case <-cancel:
-			result.cancelled = true
-		default:
-		}
 	case <-cancel:
 		result.cancelled = true
 	}
@@ -111,9 +105,5 @@ func processPart3(
 	result.processed = workerResult.processed
 	result.dropped = queue.TasksDropped()
 
-	if workerResult.err != nil {
-		return result, workerResult.err
-	}
-
-	return result, nil
+	return result, workerResult.err
 }

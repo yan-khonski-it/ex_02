@@ -9,6 +9,8 @@ import (
 	"github.com/opencareer/interview-excercises/ex_02/lib"
 )
 
+// fakeTaskQueue models the public contract that Shutdown eventually closes
+// the channel returned by Listen.
 type fakeTaskQueue struct {
 	tasks                     chan lib.Task
 	dropped                   uint64

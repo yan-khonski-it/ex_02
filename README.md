@@ -145,6 +145,8 @@ With the provided six-second cancellation signal, a typical run reports:
 status: cancelled, processed: 240, dropped: 0
 ```
 
+Shutdown time depends on the number and duration of queued and running tasks.
+
 The cancelled status is significant: `dropped: 0` only means no fetched task
 was rejected before shutdown. It does not mean that all tasks for the day were
 fetched.
