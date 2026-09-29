@@ -60,6 +60,12 @@ func TestProcessTasksWithWorkerPoolBoundsConcurrency(t *testing.T) {
 		}
 	}
 
+	select {
+	case <-started:
+		t.Fatalf("more than %d tasks ran concurrently", workerCount)
+	case <-time.After(50 * time.Millisecond):
+	}
+
 	releaseAll()
 
 	select {
