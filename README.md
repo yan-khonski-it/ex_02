@@ -75,6 +75,9 @@ the 25 ms arrival interval unchanged.
 | Unbounded application queue with 20 workers                           | 1,000 processed, 0 dropped |  1,000 processed, 0 dropped; up to 332 waiting | 20 running; waiting work unbounded |
 | Pool growing from 20 to at most 60 workers                            | 1,000 processed, 0 dropped | 1,000 processed, 0 dropped; grew to 35 workers |                                 60 |
 
+At normal speed, even the unbounded prototype needed only about 16 concurrent
+tasks, so all approaches that kept up produced similar results. Their
+differences became visible when task execution slowed.
 
 #### Tradeoffs
 
@@ -90,9 +93,9 @@ the 25 ms arrival interval unchanged.
   complexity and can overload downstream services.
 
 Batching could reduce per-task cost, but `Task.Do()` is a black box.
-Horizontal scaling is not modeled by this exercise. Increasing a finite buffer still only
-delays overload; a real no-loss guarantee requires producer back-pressure or a
-durable queue with acknowledgements and retries.
+Horizontal scaling is not modeled by this exercise. Increasing a finite buffer
+still only delays overload; a real no-loss guarantee requires producer
+back-pressure or a durable queue with acknowledgements and retries.
 
 ### Real-world limitations
 
@@ -103,12 +106,15 @@ guaranteed task delivery.
 - **Slower or stuck tasks:** In the representative 750 ms scenario, 282 of
   1,000 tasks (28.2%) were dropped. A bounded growing pool could help if the
   downstream service can safely handle the additional concurrency.
-- **Sustained overload:** Any finite buffer eventually fills when input
-  continuously exceeds processing capacity.
 - **Failed tasks:** An error returned by `Task.Do()` is logged, but the task is
   not retried and is not included in the library's dropped count.
-- **Crash or restart:** In-memory queued and running tasks may be lost or left
-  partially completed because there is no acknowledgement or durable recovery.
+- **Delivery guarantees:** When available buffering is exhausted, the queue
+  discards new arrivals. The application has no acknowledgement or recovery
+  mechanism, so a crash can lose delivered work or leave running tasks
+  partially completed. Reliable delivery requires producer back-pressure or
+  retries, durable storage with acknowledgements, and idempotent task handlers
+  because unfinished tasks may be delivered more than once. Expiration and
+  dead-letter policies are also needed for tasks that cannot be completed.
 - **Panics:** An unrecovered task panic terminates the process. Recovering at
   the task boundary would require an explicit safety policy, stack-trace
   logging, and handling for retries, dead-lettering, and partial side effects.
